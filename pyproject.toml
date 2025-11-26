@@ -1,0 +1,25 @@
+[project]
+name = "presentation-mode"
+version = "0.1.0"
+description = "macOS Presentation Mode - manage display resolution and window layout"
+authors = [
+    {name = "thatgardnerone"}
+]
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pyobjc-framework-Quartz>=10.0",
+    "pyobjc-framework-Cocoa>=10.0",
+    "pyobjc-framework-ApplicationServices>=10.0",
+]
+
+[project.scripts]
+enter-presentation-mode = "presentation_mode.cli:enter"
+exit-presentation-mode = "presentation_mode.cli:exit_mode"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{include = "presentation_mode", from = "src"}]
