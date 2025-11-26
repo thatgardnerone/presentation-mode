@@ -1,23 +1,13 @@
 """Configuration for presentation mode."""
 
-# Display configuration
-DISPLAYPLACER_PATH = "/opt/homebrew/bin/displayplacer"
+import shutil
 
-# Known displays with their resolution profiles
-DISPLAYS = {
-    # MacBook Pro built-in Retina display
-    "s4251086178": {
-        "name": "Retina",
-        "presentation": (1280, 800),   # Closest to 720p available
-        "normal": (1728, 1117),        # Native resolution
-    },
-    # ProArt 5K external monitor
-    "s536870912": {
-        "name": "ProArt External",
-        "presentation": (1280, 720),
-        "normal": (2560, 1440),
-    },
-}
+# Display configuration - auto-detect displayplacer location
+DISPLAYPLACER_PATH = shutil.which("displayplacer") or "/opt/homebrew/bin/displayplacer"
+
+# Target presentation width (will find closest available scaled mode)
+# 1280 is ideal for crisp 720p-like screen sharing
+PRESENTATION_TARGET_WIDTH = 1280
 
 # Window padding (macOS Tahoe Liquid Glass style)
 PADDING_TOP = 12

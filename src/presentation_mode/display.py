@@ -4,7 +4,7 @@ import subprocess
 import re
 from .config import (
     DISPLAYPLACER_PATH,
-    DISPLAYS,
+    PRESENTATION_TARGET_WIDTH,
 )
 
 
@@ -30,7 +30,6 @@ def get_main_display_serial() -> str | None:
     current_serial = None
     for line in info.split('\n'):
         if "Serial screen id:" in line:
-            # Extract serial like "s4251086178"
             match = re.search(r'Serial screen id: (s\d+)', line)
             if match:
                 current_serial = match.group(1)
@@ -40,53 +39,18 @@ def get_main_display_serial() -> str | None:
     return None
 
 
-def get_display_config() -> dict | None:
-    """Get configuration for the current main display.
-
-    Returns:
-        Display config dict with 'name', 'presentation', 'normal' keys,
-        or None if display not recognized
-    """
-    serial = get_main_display_serial()
-    if serial and serial in DISPLAYS:
-        config = DISPLAYS[serial].copy()
-        config['serial'] = serial
-        return config
-
-    # Unknown display - try to auto-detect reasonable defaults
-    if serial:
-        print(f"Unknown display: {serial}")
-        # Return a generic config
-        return {
-            'serial': serial,
-            'name': 'Unknown',
-            'presentation': (1280, 720),
-            'normal': (1920, 1080),
-        }
-
-    return None
-
-
-def find_mode_id(
-    serial: str,
-    width: int,
-    height: int,
-    scaled: bool = True,
-) -> str | None:
-    """Find the mode ID for a given resolution on a display.
+def get_available_modes(serial: str) -> list[dict]:
+    """Get all available display modes for a display.
 
     Args:
         serial: Display serial ID
-        width: Target width
-        height: Target height
-        scaled: If True, look for scaled mode (HiDPI)
 
     Returns:
-        Mode ID string or None if not found
+        List of mode dicts with 'id', 'width', 'height', 'hz', 'scaled' keys
     """
     info = get_display_info()
+    modes = []
 
-    # Find the section for our display
     in_target_display = False
     for line in info.split('\n'):
         if serial in line:
@@ -94,53 +58,108 @@ def find_mode_id(
             continue
 
         if in_target_display:
-            # Check if we've moved to a different display section
             if line.startswith("Persistent screen id:"):
                 break
 
-            # Look for mode line matching our resolution
-            # Format: "  mode 42: res:1280x720 hz:60 color_depth:8 scaling:on"
-            if f"res:{width}x{height}" in line:
-                # For scaled modes, prefer scaling:on
-                # For non-scaled, accept lines without scaling:on or with scaling:off
-                if scaled:
-                    if "scaling:on" in line:
-                        match = re.search(r'mode (\d+):', line)
-                        if match:
-                            return match.group(1)
-                else:
-                    if "scaling:on" not in line:
-                        match = re.search(r'mode (\d+):', line)
-                        if match:
-                            return match.group(1)
+            # Parse mode line: "  mode 42: res:1280x720 hz:60 color_depth:8 scaling:on"
+            match = re.search(r'mode (\d+): res:(\d+)x(\d+) hz:(\d+)', line)
+            if match:
+                modes.append({
+                    'id': match.group(1),
+                    'width': int(match.group(2)),
+                    'height': int(match.group(3)),
+                    'hz': int(match.group(4)),
+                    'scaled': 'scaling:on' in line,
+                })
+
+    return modes
+
+
+def get_current_resolution(serial: str) -> tuple[int, int] | None:
+    """Get the current resolution for a display.
+
+    Args:
+        serial: Display serial ID
+
+    Returns:
+        Tuple of (width, height) or None if not found
+    """
+    info = get_display_info()
+
+    in_target_display = False
+    for line in info.split('\n'):
+        if serial in line:
+            in_target_display = True
+            continue
+
+        if in_target_display:
+            if line.startswith("Persistent screen id:"):
+                break
+
+            # Look for "Resolution: 1728x1117"
+            match = re.search(r'Resolution: (\d+)x(\d+)', line)
+            if match:
+                return (int(match.group(1)), int(match.group(2)))
 
     return None
 
 
-def set_resolution(width: int, height: int, scaled: bool = True) -> bool:
-    """Set the main display to specified resolution.
+def find_presentation_mode(serial: str) -> dict | None:
+    """Find the best presentation mode for a display.
+
+    Looks for a scaled mode with width closest to PRESENTATION_TARGET_WIDTH.
 
     Args:
+        serial: Display serial ID
+
+    Returns:
+        Mode dict or None if not found
+    """
+    modes = get_available_modes(serial)
+
+    # Filter to scaled modes only (for crisp text)
+    scaled_modes = [m for m in modes if m['scaled']]
+
+    if not scaled_modes:
+        return None
+
+    # Find mode closest to target width
+    target = PRESENTATION_TARGET_WIDTH
+    best = min(scaled_modes, key=lambda m: abs(m['width'] - target))
+
+    return best
+
+
+def find_mode_for_resolution(serial: str, width: int, height: int) -> dict | None:
+    """Find a scaled mode matching the given resolution.
+
+    Args:
+        serial: Display serial ID
         width: Target width
         height: Target height
-        scaled: If True, use scaled (HiDPI) mode
+
+    Returns:
+        Mode dict or None if not found
+    """
+    modes = get_available_modes(serial)
+
+    for mode in modes:
+        if mode['width'] == width and mode['height'] == height and mode['scaled']:
+            return mode
+
+    return None
+
+
+def set_mode(serial: str, mode_id: str) -> bool:
+    """Set display to a specific mode.
+
+    Args:
+        serial: Display serial ID
+        mode_id: Mode ID to set
 
     Returns:
         True if successful, False otherwise
     """
-    config = get_display_config()
-    if not config:
-        print("Could not detect main display")
-        return False
-
-    serial = config['serial']
-    mode_id = find_mode_id(serial, width, height, scaled)
-
-    if not mode_id:
-        print(f"Could not find mode for {width}x{height} (scaled={scaled}) on {config['name']}")
-        return False
-
-    # Build displayplacer command
     display_arg = f"id:{serial} mode:{mode_id}"
 
     result = subprocess.run(
@@ -152,28 +171,95 @@ def set_resolution(width: int, height: int, scaled: bool = True) -> bool:
     return result.returncode == 0
 
 
-def set_presentation_resolution() -> bool:
-    """Set display to presentation mode resolution."""
-    config = get_display_config()
-    if not config:
+def get_current_mode(serial: str) -> dict | None:
+    """Get the current display mode.
+
+    Args:
+        serial: Display serial ID
+
+    Returns:
+        Mode dict for current mode, or None if not found
+    """
+    resolution = get_current_resolution(serial)
+    if not resolution:
+        return None
+
+    width, height = resolution
+    modes = get_available_modes(serial)
+
+    # Find a scaled mode matching current resolution
+    for mode in modes:
+        if mode['width'] == width and mode['height'] == height and mode['scaled']:
+            return mode
+
+    # Fall back to any mode matching resolution
+    for mode in modes:
+        if mode['width'] == width and mode['height'] == height:
+            return mode
+
+    return None
+
+
+def set_presentation_resolution() -> tuple[bool, dict | None]:
+    """Set display to presentation mode resolution.
+
+    Automatically finds the best presentation resolution for the main display.
+
+    Returns:
+        Tuple of (success, original_mode) where original_mode can be used to restore
+    """
+    serial = get_main_display_serial()
+    if not serial:
+        print("Could not detect main display")
+        return False, None
+
+    # Save current mode before switching
+    original_mode = get_current_mode(serial)
+
+    mode = find_presentation_mode(serial)
+    if not mode:
+        print("Could not find suitable presentation mode")
+        return False, original_mode
+
+    print(f"   Setting {mode['width']}x{mode['height']} (mode {mode['id']})")
+    success = set_mode(serial, mode['id'])
+    return success, original_mode
+
+
+def set_normal_resolution(saved_mode: dict | None = None) -> bool:
+    """Set display to normal resolution.
+
+    If saved_mode is provided, restores to that mode. Otherwise finds a sensible default.
+
+    Args:
+        saved_mode: Optional mode dict to restore (from set_presentation_resolution)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    serial = get_main_display_serial()
+    if not serial:
         print("Could not detect main display")
         return False
 
-    width, height = config['presentation']
-    print(f"   Using {config['name']} display: {width}x{height}")
-    return set_resolution(width, height, scaled=True)
+    # Use saved mode if provided
+    if saved_mode:
+        print(f"   Restoring {saved_mode['width']}x{saved_mode['height']} (mode {saved_mode['id']})")
+        return set_mode(serial, saved_mode['id'])
 
+    # Fall back to finding a sensible default (highest scaled resolution)
+    modes = get_available_modes(serial)
+    scaled_modes = [m for m in modes if m['scaled']]
 
-def set_normal_resolution() -> bool:
-    """Set display to normal resolution."""
-    config = get_display_config()
-    if not config:
-        print("Could not detect main display")
+    if not scaled_modes:
+        print("Could not find scaled modes")
         return False
 
-    width, height = config['normal']
-    print(f"   Using {config['name']} display: {width}x{height}")
-    return set_resolution(width, height, scaled=True)
+    # Find highest resolution (by width, then height)
+    best = max(scaled_modes, key=lambda m: (m['width'], m['height']))
+
+    print(f"   Setting {best['width']}x{best['height']} (mode {best['id']})")
+    return set_mode(serial, best['id'])
 
 
 def get_main_display_bounds() -> tuple[int, int, int, int]:
