@@ -5,6 +5,8 @@ import re
 from .config import (
     DISPLAYPLACER_PATH,
     PRESENTATION_TARGET_WIDTH,
+    NORMAL_WIDTH,
+    NORMAL_HEIGHT,
 )
 
 
@@ -171,68 +173,10 @@ def set_mode(serial: str, mode_id: str) -> bool:
     return result.returncode == 0
 
 
-def get_current_mode(serial: str) -> dict | None:
-    """Get the current display mode.
-
-    Args:
-        serial: Display serial ID
-
-    Returns:
-        Mode dict for current mode, or None if not found
-    """
-    resolution = get_current_resolution(serial)
-    if not resolution:
-        return None
-
-    width, height = resolution
-    modes = get_available_modes(serial)
-
-    # Find a scaled mode matching current resolution
-    for mode in modes:
-        if mode['width'] == width and mode['height'] == height and mode['scaled']:
-            return mode
-
-    # Fall back to any mode matching resolution
-    for mode in modes:
-        if mode['width'] == width and mode['height'] == height:
-            return mode
-
-    return None
-
-
-def set_presentation_resolution() -> tuple[bool, dict | None]:
+def set_presentation_resolution() -> bool:
     """Set display to presentation mode resolution.
 
     Automatically finds the best presentation resolution for the main display.
-
-    Returns:
-        Tuple of (success, original_mode) where original_mode can be used to restore
-    """
-    serial = get_main_display_serial()
-    if not serial:
-        print("Could not detect main display")
-        return False, None
-
-    # Save current mode before switching
-    original_mode = get_current_mode(serial)
-
-    mode = find_presentation_mode(serial)
-    if not mode:
-        print("Could not find suitable presentation mode")
-        return False, original_mode
-
-    print(f"   Setting {mode['width']}x{mode['height']} (mode {mode['id']})")
-    success = set_mode(serial, mode['id'])
-    return success, original_mode
-
-
-def set_normal_resolution(saved_mode: dict | None = None) -> bool:
-    """Set display to normal resolution.
-
-    If saved_mode is provided, restores to that mode. Otherwise finds a sensible default.
-
-    Args:
-        saved_mode: Optional mode dict to restore (from set_presentation_resolution)
 
     Returns:
         True if successful, False otherwise
@@ -242,24 +186,33 @@ def set_normal_resolution(saved_mode: dict | None = None) -> bool:
         print("Could not detect main display")
         return False
 
-    # Use saved mode if provided
-    if saved_mode:
-        print(f"   Restoring {saved_mode['width']}x{saved_mode['height']} (mode {saved_mode['id']})")
-        return set_mode(serial, saved_mode['id'])
-
-    # Fall back to finding a sensible default (highest scaled resolution)
-    modes = get_available_modes(serial)
-    scaled_modes = [m for m in modes if m['scaled']]
-
-    if not scaled_modes:
-        print("Could not find scaled modes")
+    mode = find_presentation_mode(serial)
+    if not mode:
+        print("Could not find suitable presentation mode")
         return False
 
-    # Find highest resolution (by width, then height)
-    best = max(scaled_modes, key=lambda m: (m['width'], m['height']))
+    print(f"   Setting {mode['width']}x{mode['height']} (mode {mode['id']})")
+    return set_mode(serial, mode['id'])
 
-    print(f"   Setting {best['width']}x{best['height']} (mode {best['id']})")
-    return set_mode(serial, best['id'])
+
+def set_normal_resolution() -> bool:
+    """Set display to normal resolution (2560x1440).
+
+    Returns:
+        True if successful, False otherwise
+    """
+    serial = get_main_display_serial()
+    if not serial:
+        print("Could not detect main display")
+        return False
+
+    mode = find_mode_for_resolution(serial, NORMAL_WIDTH, NORMAL_HEIGHT)
+    if not mode:
+        print(f"Could not find {NORMAL_WIDTH}x{NORMAL_HEIGHT} mode")
+        return False
+
+    print(f"   Setting {mode['width']}x{mode['height']} (mode {mode['id']})")
+    return set_mode(serial, mode['id'])
 
 
 def get_main_display_bounds() -> tuple[int, int, int, int]:

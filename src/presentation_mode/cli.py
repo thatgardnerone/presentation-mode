@@ -1,9 +1,7 @@
 """CLI entry points for presentation mode."""
 
-import json
 import sys
 import time
-from pathlib import Path
 
 from .config import RESOLUTION_CHANGE_DELAY
 from .display import (
@@ -14,41 +12,12 @@ from .display import (
 from .menubar import hide_menubar, show_menubar
 from .windows import tile_windows_on_display
 
-# State file to remember original resolution
-STATE_FILE = Path.home() / ".presentation-mode-state.json"
-
-
-def save_state(mode: dict) -> None:
-    """Save the original display mode to state file."""
-    try:
-        STATE_FILE.write_text(json.dumps(mode))
-    except Exception:
-        pass  # Non-critical
-
-
-def load_state() -> dict | None:
-    """Load the original display mode from state file."""
-    try:
-        if STATE_FILE.exists():
-            return json.loads(STATE_FILE.read_text())
-    except Exception:
-        pass
-    return None
-
-
-def clear_state() -> None:
-    """Remove the state file."""
-    try:
-        STATE_FILE.unlink(missing_ok=True)
-    except Exception:
-        pass
-
 
 def enter() -> int:
     """Enter presentation mode.
 
     1. Hide the menu bar
-    2. Set display to presentation resolution (saves original)
+    2. Set display to presentation resolution
     3. Wait for resolution change to settle
     4. Resize all windows to fill display with padding
 
@@ -63,16 +32,11 @@ def enter() -> int:
     if not hide_menubar():
         print("   Warning: Failed to hide menu bar")
 
-    # Step 2: Set presentation resolution (saves original)
+    # Step 2: Set presentation resolution
     print("2. Setting presentation resolution...")
-    success, original_mode = set_presentation_resolution()
-    if not success:
+    if not set_presentation_resolution():
         print("   Error: Failed to set presentation resolution")
         return 1
-
-    # Save original mode for restoration
-    if original_mode:
-        save_state(original_mode)
 
     # Step 3: Wait for resolution change to settle
     print(f"3. Waiting {RESOLUTION_CHANGE_DELAY}s for resolution change...")
@@ -95,7 +59,7 @@ def exit_mode() -> int:
     """Exit presentation mode.
 
     1. Show the menu bar
-    2. Restore original display resolution
+    2. Set display to 2560x1440
     3. Wait for resolution change to settle
     4. Resize all windows to fill display with padding
 
@@ -110,15 +74,11 @@ def exit_mode() -> int:
     if not show_menubar():
         print("   Warning: Failed to show menu bar")
 
-    # Step 2: Restore original resolution
-    print("2. Restoring resolution...")
-    saved_mode = load_state()
-    if not set_normal_resolution(saved_mode):
-        print("   Error: Failed to restore resolution")
+    # Step 2: Set normal resolution (2560x1440)
+    print("2. Setting resolution to 2560x1440...")
+    if not set_normal_resolution():
+        print("   Error: Failed to set resolution")
         return 1
-
-    # Clear state after successful restoration
-    clear_state()
 
     # Step 3: Wait for resolution change to settle
     print(f"3. Waiting {RESOLUTION_CHANGE_DELAY}s for resolution change...")

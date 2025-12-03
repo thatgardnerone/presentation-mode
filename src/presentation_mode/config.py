@@ -9,6 +9,10 @@ DISPLAYPLACER_PATH = shutil.which("displayplacer") or "/opt/homebrew/bin/display
 # 1280 is ideal for crisp 720p-like screen sharing
 PRESENTATION_TARGET_WIDTH = 1280
 
+# Normal/exit resolution (external display default)
+NORMAL_WIDTH = 2560
+NORMAL_HEIGHT = 1440
+
 # Window padding (macOS Tahoe Liquid Glass style)
 PADDING_TOP = 12
 PADDING_BOTTOM = 12
